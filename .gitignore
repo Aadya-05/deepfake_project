@@ -1,0 +1,13 @@
+# Python virtual environment
+/Backend/venv/
+/.venv/
+
+# Python cache
+__pycache__/
+
+# Environment variables
+.env
+
+# AI Models - Add these lines
+Backend/best_vit_model.pth
+Backend/fasterrcnn_resnet50_fpn_coco-258fb6c6.pth
