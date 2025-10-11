@@ -20,3 +20,4 @@ python-magic==0.4.27
 google-api-python-client==2.107.0
 serpapi==0.1.0 
 beautifulsoup4==4.12.3
+yt-dlp

@@ -9,190 +9,136 @@ import cv2
 import requests
 from PIL import Image
 from torchvision import transforms
-from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
-from bs4 import BeautifulSoup
-import logging # Import the logging library
+import logging
+import tempfile
 
-# --- ENABLE LOGGING ---
-# This will print detailed information from the telegram bot library to your terminal
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logging.getLogger("httpx").setLevel(logging.WARNING) # Keep httpx logs cleaner
+# --- Logging Setup ---
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# --- The rest of your code is the same ---
-
+# --- Load Environment and Models ---
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 
-try:
-    detection_model = fasterrcnn_resnet50_fpn(weights=None)
-    detection_model.load_state_dict(torch.load("fasterrcnn_resnet50_fpn_coco-258fb6c6.pth"))
-    detection_model.eval()
-    logger.info("Successfully loaded local object detection model for bot.")
-    COCO_INSTANCE_CATEGORY_NAMES = [
-        '__background__', 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
-        'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'N/A', 'stop sign',
-        'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
-        'elephant', 'bear', 'zebra', 'giraffe', 'N/A', 'backpack', 'umbrella', 'N/A', 'N/A',
-        'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
-        'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
-        'bottle', 'N/A', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl',
-        'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza',
-        'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'N/A', 'dining table',
-        'N/A', 'N/A', 'toilet', 'N/A', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
-        'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'N/A', 'book',
-        'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
-    ]
-except Exception as e:
-    logger.error(f"Could not load detection model for bot: {e}")
-    detection_model = None
+# (This section is simplified as the bot will now call the API)
 
-def get_content_labels(image: Image.Image, threshold=0.7):
-    if not detection_model: return []
-    try:
-        transform = transforms.Compose([transforms.ToTensor()])
-        img_tensor = transform(image)
-        with torch.no_grad():
-            prediction = detection_model([img_tensor])[0]
-        labels = []
-        for i in range(len(prediction['labels'])):
-            score = prediction['scores'][i].item()
-            if score > threshold:
-                label_name = COCO_INSTANCE_CATEGORY_NAMES[prediction['labels'][i].item()]
-                if label_name not in [l['description'] for l in labels]:
-                     labels.append({'description': label_name, 'confidence': score})
-        return labels[:5]
-    except Exception as e:
-        logger.error(f"Error in content analysis: {e}")
-        return []
-
-class FreeReverseImageSearch:
-    def __init__(self):
-        self.headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/103.0.0.0 Safari/537.36'}
-    async def search(self, image: Image.Image):
-        try:
-            buffered = BytesIO()
-            image.save(buffered, format="JPEG")
-            img_bytes = buffered.getvalue()
-            upload_url = "http://images.google.com/searchbyimage/upload"
-            multipart = {'encoded_image': ('image.jpg', img_bytes), 'image_content': ''}
-            response = requests.post(upload_url, files=multipart, allow_redirects=False, timeout=15)
-            search_url = response.headers.get("Location")
-            if not search_url: return {'error': 'Could not get search URL from Google.'}
-            response = requests.get(search_url, headers=self.headers, timeout=15)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            page_matches = []
-            for a_tag in soup.find_all('a', href=True):
-                if a_tag.find('h3') and '/url?q=' in a_tag['href']:
-                    url = a_tag['href'].split('/url?q=')[1].split('&')[0]
-                    domain = url.split('//')[-1].split('/')[0]
-                    if url not in [p['url'] for p in page_matches]:
-                        page_matches.append({'url': url, 'domain': domain})
-            return {'page_matches': page_matches[:5]}
-        except Exception as e:
-            logger.error(f"Error in reverse image search: {e}")
-            return {'page_matches': []}
-
-class DeepfakeDetector:
-    def __init__(self, model_path="best_vit_model.pth"):
-        torch.manual_seed(42)
-        random.seed(42)
-        np.random.seed(42)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = timm.create_model("mvitv2_base_cls", pretrained=False, num_classes=2)
-        try:
-            self.model.load_state_dict(torch.load(model_path, map_location=self.device))
-        except Exception as e:
-            raise Exception(f"Failed to load model from {model_path}: {e}")
-        self.model.to(self.device)
-        self.model.eval()
-        self.transform = transforms.Compose([
-            transforms.Resize((224, 224)),
-            transforms.ToTensor(),
-            transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225])
-        ])
-        self.face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
-    
-    def detect_faces(self, img_cv):
-        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-        return self.face_cascade.detectMultiScale(gray, 1.1, 4)
-        
-    def predict(self, image):
-        img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
-        faces = self.detect_faces(img_cv)
-        face_pil = image
-        if len(faces) > 0:
-            x, y, w, h = faces[0]
-            face_cv = img_cv[y:y+h, x:x+w]
-            face_pil = Image.fromarray(cv2.cvtColor(face_cv, cv2.COLOR_BGR2RGB))
-        input_tensor = self.transform(face_pil).unsqueeze(0).to(self.device)
-        with torch.no_grad():
-            output = self.model(input_tensor)
-            probs = torch.softmax(output, dim=1)[0]
-            predicted_class = torch.argmax(probs).item()
-        return {"prediction": "Real" if predicted_class == 1 else "Manipulated", "confidence": {"real": float(probs[1].item()),"manipulated": float(probs[0].item())}, "face_detected": len(faces) > 0, "faces_count": len(faces)}
-
-try:
-    deepfake_detector = DeepfakeDetector()
-    reverse_search = FreeReverseImageSearch()
-except Exception as e:
-    logger.critical(f"FATAL: Error initializing services: {e}")
-    exit()
+# --- Bot Handlers ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("👋 Welcome! Send an image to check if it's a deepfake.")
+    await update.message.reply_text("👋 Welcome! Send me an image, video, or video URL to analyze for deepfakes.")
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Send any image to analyze it.")
+    await update.message.reply_text("You can send an image file, a video file, or a URL to a video (e.g., from YouTube, Twitter).")
+
+# ✅ --- THIS FUNCTION CONTAINS YOUR CUSTOM LOGIC --- ✅
+def format_response(data: dict, analysis_type: str):
+    """
+    Formats the JSON response from the API into a readable string,
+    applying the custom prediction and score-swapping logic.
+    """
+    # 1. Get raw confidence scores as percentages
+    real_confidence = data['confidence']['real'] * 100
+    manipulated_confidence = data['confidence']['manipulated'] * 100
+
+    # 2. Determine the prediction based on the > 20% threshold
+    prediction = "Real"
+    if manipulated_confidence > 20:
+        prediction = "Manipulated"
+        
+    # 3. Apply your swap logic for display purposes
+    if manipulated_confidence < 50 and prediction == "Manipulated":
+        # Pythonic way to swap two variables
+        real_confidence, manipulated_confidence = manipulated_confidence, real_confidence
+
+    # 4. Return the formatted string with the final values
+    return (
+        f"🤖 **{analysis_type} Analysis Result**:\n"
+        f"Status: *{prediction}*\n"
+        f"Confidence:\n"
+        f"  - Real: {real_confidence:.2f}%\n"
+        f"  - Manipulated: {manipulated_confidence:.2f}%"
+    )
+
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = update.effective_user
-    logger.info(f"Received image from user {user.username} ({user.id})")
-    processing_message = await update.message.reply_text("🔄 Analyzing image... Please wait.")
+    logger.info("Received image from user.")
+    processing_message = await update.message.reply_text("🔄 Analyzing image...")
+    
+    photo = await update.message.photo[-1].get_file()
+    photo_bytes = await photo.download_as_bytearray()
+    
     try:
-        photo = await update.message.photo[-1].get_file()
-        photo_bytes = await photo.download_as_bytearray()
-        image = Image.open(BytesIO(photo_bytes)).convert("RGB")
-        await processing_message.edit_text("🔍 Running deepfake check...")
-        deepfake_result = deepfake_detector.predict(image)
-        await processing_message.edit_text("🏷️ Identifying image content...")
-        labels = get_content_labels(image)
-        await processing_message.edit_text("🌐 Searching for image online...")
-        search_result = await reverse_search.search(image)
-        response = f"🤖 **Deepfake Analysis**:\n" \
-                   f"Status: *{deepfake_result['prediction']}*\n" \
-                   f"Confidence:\n" \
-                   f"  - Real: {deepfake_result['confidence']['real']*100:.2f}%\n" \
-                   f"  - Manipulated: {deepfake_result['confidence']['manipulated']*100:.2f}%\n"
-        if deepfake_result['face_detected']: response += f"\n👤 **Face Analysis**:\nFaces Detected: {deepfake_result['faces_count']}\n"
-        if labels:
-            response += f"\n🖼️ **Image Content**:\n"
-            for label in labels: response += f"- {label['description']} ({label['confidence']*100:.1f}%)\n"
-        if search_result and search_result.get('page_matches'):
-            response += f"\n🔗 **Possible Online Sources**:\n"
-            for match in search_result['page_matches']: response += f"- [{match['domain']}]({match['url']})\n"
+        files = {'file': ('image.jpg', photo_bytes, 'image/jpeg')}
+        response = requests.post("http://localhost:8000/predict-image/", files=files)
+        
+        if response.status_code == 200:
+            await processing_message.edit_text(format_response(response.json(), "Image"), parse_mode='Markdown')
         else:
-            response += "\n\n_No matching images found online._"
-        await processing_message.edit_text(response, parse_mode='Markdown')
-        logger.info(f"Successfully sent analysis to user {user.id}")
+            await processing_message.edit_text(f"Error from server: {response.text}")
+    except requests.exceptions.ConnectionError:
+        await processing_message.edit_text("❌ Error: Could not connect to the local analysis server.")
     except Exception as e:
-        logger.error(f"Error in handle_image: {e}", exc_info=True)
-        await processing_message.edit_text(f"❌ An error occurred during analysis.")
+        await processing_message.edit_text(f"An error occurred: {e}")
+
+
+async def handle_video(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    logger.info("Received video from user.")
+    processing_message = await update.message.reply_text("🔄 Analyzing video... (this may take a moment)")
+
+    video_file = await update.message.video.get_file()
+    video_bytes = await video_file.download_as_bytearray()
+
+    try:
+        files = {'file': (video_file.file_path, video_bytes, 'video/mp4')}
+        response = requests.post("http://localhost:8000/predict-video-from-upload/", files=files, timeout=120)
+
+        if response.status_code == 200:
+            await processing_message.edit_text(format_response(response.json(), "Video"), parse_mode='Markdown')
+        else:
+            await processing_message.edit_text(f"Error from server: {response.text}")
+    except requests.exceptions.ConnectionError:
+        await processing_message.edit_text("❌ Error: Could not connect to the local analysis server.")
+    except Exception as e:
+        await processing_message.edit_text(f"An error occurred: {e}")
+
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    message_text = update.message.text
+    if message_text.startswith('http'):
+        logger.info(f"Received URL from user: {message_text}")
+        processing_message = await update.message.reply_text(f"🔄 Analyzing video from URL...")
+        
+        try:
+            # Note: The FastAPI backend expects JSON with a key 'url'
+            response = requests.post("http://localhost:8000/predict-video-from-url/", json={"url": message_text}, timeout=180)
+
+            if response.status_code == 200:
+                await processing_message.edit_text(format_response(response.json(), "Video"), parse_mode='Markdown')
+            else:
+                await processing_message.edit_text(f"Error from server: {response.text}")
+        except requests.exceptions.ConnectionError:
+            await processing_message.edit_text("❌ Error: Could not connect to the local analysis server.")
+        except Exception as e:
+            await processing_message.edit_text(f"An error occurred: {e}")
+    else:
+        await update.message.reply_text("Please send an image, video file, or a video URL.")
 
 def main():
     if not TELEGRAM_TOKEN:
         logger.critical("FATAL: TELEGRAM_TOKEN not found in .env file.")
         return
+        
     application = Application.builder().token(TELEGRAM_TOKEN).build()
+    
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
-    
-    logger.info("🤖 Starting bot...")
+    application.add_handler(MessageHandler(filters.VIDEO, handle_video))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+
+    logger.info("🤖 Starting bot with full media support...")
     application.run_polling()
 
 if __name__ == "__main__":

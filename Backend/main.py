@@ -1,72 +1,35 @@
-from fastapi import FastAPI, File, UploadFile, HTTPException
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, File, UploadFile, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 import torch
 import timm
 from torchvision import transforms
-from torchvision.models.detection import fasterrcnn_resnet50_fpn
 from PIL import Image
 import cv2
 import numpy as np
 import io
 import random
 import os
+import tempfile
+import yt_dlp
 
-# --- Load Content/Label Detection Model Locally ---
-try:
-    detection_model = fasterrcnn_resnet50_fpn(weights=None)
-    detection_model.load_state_dict(torch.load("fasterrcnn_resnet50_fpn_coco-258fb6c6.pth"))
-    detection_model.eval()
-    print("Successfully loaded local object detection model.")
-    COCO_INSTANCE_CATEGORY_NAMES = [
-        '__background__', 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
-        'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'N/A', 'stop sign',
-        'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
-        'elephant', 'bear', 'zebra', 'giraffe', 'N/A', 'backpack', 'umbrella', 'N/A', 'N/A',
-        'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
-        'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
-        'bottle', 'N/A', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl',
-        'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza',
-        'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'N/A', 'dining table',
-        'N/A', 'N/A', 'toilet', 'N/A', 'tv', 'laptop', 'mouse', 'remote', 'keyboard', 'cell phone',
-        'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'N/A', 'book',
-        'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
-    ]
-except Exception as e:
-    print(f"Could not load detection model: {e}")
-    detection_model = None
-
-def get_content_labels(image: Image.Image, threshold=0.7):
-    if not detection_model: return []
-    try:
-        transform = transforms.Compose([transforms.ToTensor()])
-        img_tensor = transform(image)
-        with torch.no_grad():
-            prediction = detection_model([img_tensor])[0]
-        labels = []
-        for i in range(len(prediction['labels'])):
-            score = prediction['scores'][i].item()
-            if score > threshold:
-                label_name = COCO_INSTANCE_CATEGORY_NAMES[prediction['labels'][i].item()]
-                if label_name not in [l['description'] for l in labels]:
-                     labels.append({'description': label_name, 'confidence': score})
-        return labels[:5]
-    except Exception as e:
-        print(f"Error in content analysis: {str(e)}")
-        return []
-
-torch.manual_seed(42)
-random.seed(42)
-np.random.seed(42)
-torch.backends.cudnn.deterministic = True
-torch.backends.cudnn.benchmark = False
-
+# --- Load a SINGLE Model for Both Image and Video ---
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+print(f"Using device: {device}")
+
+# We will use the MViTv2 model for both images and video frames
 model = timm.create_model("mvitv2_base_cls", pretrained=False, num_classes=2)
 model.load_state_dict(torch.load("best_vit_model.pth", map_location=device))
 model.to(device)
 model.eval()
+print("Single deepfake model (MViTv2) loaded for all tasks.")
 
+
+# --- Helper Functions and App Setup ---
+torch.manual_seed(42)
+random.seed(42)
+np.random.seed(42)
+
+# Image transforms for the MViTv2 model
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -82,45 +45,104 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-MAX_FILE_SIZE = 50 * 1024 * 1024
 
+def analyze_video_frames(video_path: str):
+    """Helper function to analyze video frames using the SINGLE image model."""
+    try:
+        cap = cv2.VideoCapture(video_path)
+        frame_count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        if frame_count < 1: raise ValueError("Video file is empty.")
+        
+        n_frames_to_analyze = 30
+        frame_indices = np.linspace(0, frame_count - 1, min(n_frames_to_analyze, frame_count), dtype=int)
+        predictions = []
+
+        for i in frame_indices:
+            cap.set(cv2.CAP_PROP_POS_FRAMES, i)
+            ret, frame = cap.read()
+            if not ret: continue
+
+            faces = face_cascade.detectMultiScale(cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY), 1.1, 4)
+            if not len(faces): continue
+
+            x, y, w, h = faces[0]
+            face_frame = frame[y:y+h, x:x+w]
+            
+            face_image = Image.fromarray(cv2.cvtColor(face_frame, cv2.COLOR_BGR2RGB))
+            input_tensor = transform(face_image).unsqueeze(0).to(device)
+
+            with torch.no_grad():
+                output = model(input_tensor) # Use the single 'model'
+                probs = torch.softmax(output, dim=1)[0]
+                # Index 1 is 'Real' for this model, so we want the 'Manipulated' prob at index 0
+                predictions.append(probs[0].item())
+
+        cap.release()
+    except Exception as e:
+        print(f"Error during video frame analysis: {e}")
+        return None
+    if not predictions: return None
+
+    avg_fake_prob = np.mean(predictions)
+    return {
+        "prediction": "Manipulated" if avg_fake_prob > 0.5 else "Real",
+        "confidence": {"real": 1.0 - avg_fake_prob, "manipulated": avg_fake_prob}
+    }
+
+# --- API Endpoints ---
 @app.get("/")
 async def root():
-    return {"message": "Deepfake Detection API (Free Version) is running"}
+    return {"message": "Deepfake Detection API (Simplified - Single Model) is running"}
 
-@app.post("/predict/")
+@app.post("/predict-image/")
 async def predict_image(file: UploadFile = File(...)):
     try:
         contents = await file.read()
-        if len(contents) > MAX_FILE_SIZE:
-            raise HTTPException(status_code=413, detail="File too large")
         image = Image.open(io.BytesIO(contents)).convert("RGB")
-        
-        # *** THE FIX IS HERE ***
-        img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR) # Changed from COLOR_RGB_BGR
-        
-        gray = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+        img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
+        faces = face_cascade.detectMultiScale(cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY), 1.1, 4)
         face_pil = image
         if len(faces) > 0:
             x, y, w, h = faces[0]
-            face_cv = img_cv[y:y+h, x:x+w]
-            face_pil = Image.fromarray(cv2.cvtColor(face_cv, cv2.COLOR_BGR2RGB))
+            face_pil = Image.fromarray(cv2.cvtColor(img_cv[y:y+h, x:x+w], cv2.COLOR_BGR2RGB))
+        
         input_tensor = transform(face_pil).unsqueeze(0).to(device)
         with torch.no_grad():
-            output = model(input_tensor)
+            output = model(input_tensor) # Use the single 'model'
             probs = torch.softmax(output, dim=1)[0]
-            predicted_class = torch.argmax(probs).item()
-        labels = get_content_labels(image)
-        result = {
-            "prediction": "Real" if predicted_class == 1 else "Manipulated",
-            "confidence": {
-                "real": float(probs[1].item()),
-                "manipulated": float(probs[0].item())
-            },
+        return {
+            "prediction": "Real" if torch.argmax(probs).item() == 1 else "Manipulated",
+            "confidence": {"real": float(probs[1].item()), "manipulated": float(probs[0].item())},
             "face_detected": len(faces) > 0,
-            "labels": labels
         }
-        return result
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/predict-video-from-upload/")
+async def predict_video_from_upload(file: UploadFile = File(...)):
+    if not file.content_type.startswith("video/"):
+        raise HTTPException(status_code=400, detail="Please upload a video file.")
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp:
+        tmp.write(await file.read())
+        video_path = tmp.name
+    result = analyze_video_frames(video_path)
+    os.remove(video_path)
+    if result is None:
+        raise HTTPException(status_code=400, detail="Could not process video. No faces detected or file is invalid.")
+    return result
+
+@app.post("/predict-video-from-url/")
+async def predict_video_from_url(url: str = Body(..., embed=True)):
+    ydl_opts = {'format': 'best[ext=mp4]/best', 'outtmpl': os.path.join(tempfile.gettempdir(), '%(id)s.%(ext)s')}
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+            video_path = ydl.prepare_filename(info)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Could not download video from URL: {e}")
+    result = analyze_video_frames(video_path)
+    if os.path.exists(video_path):
+        os.remove(video_path)
+    if result is None:
+        raise HTTPException(status_code=400, detail="Could not process video from URL. No faces detected or link is invalid.")
+    return result
