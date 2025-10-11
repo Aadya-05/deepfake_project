@@ -1,22 +1,28 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Deepfake Image Analyzer</title>
+    <title>Deepfake Analyzer</title>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link rel="stylesheet" href="../css/sidebar.css">
 </head>
 <body>
     <div class="sidebar">
-        <h1>Deepfake Image Analyzer</h1>
+        <h1>Deepfake Analyzer</h1>
         
         <div id="drop-area" class="drop-area">
-            <p>Drag and drop an image here</p>
+            <p>Drag & Drop an Image or Video File Here</p>
         </div>
-
         <img id="preview-image" class="preview-image" style="display: none;">
-        
-        <button id="analyze-button" class="analyze-button" style="display: none;">Analyze</button>
+        <button id="analyze-button" class="analyze-button" style="display: none;">Analyze File</button>
+
+        <hr class="separator">
+
+        <div class="url-section">
+            <p>Or Paste a Video URL</p>
+            <input type="text" id="url-input" placeholder="e.g., YouTube, Twitter link">
+            <button id="analyze-url-button" class="analyze-button">Analyze URL</button>
+        </div>
 
         <div id="analysis-result" class="analysis-result" style="display: none;">
             <h2>Analysis Result:</h2>
@@ -27,4 +33,4 @@
     </div>
     <script src="../js/sidebar.js"></script>
 </body>
-</html> 
+</html>
