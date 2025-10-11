@@ -14,6 +14,18 @@ from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from dotenv import load_dotenv
 from bs4 import BeautifulSoup
+import logging # Import the logging library
+
+# --- ENABLE LOGGING ---
+# This will print detailed information from the telegram bot library to your terminal
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
+logging.getLogger("httpx").setLevel(logging.WARNING) # Keep httpx logs cleaner
+logger = logging.getLogger(__name__)
+
+# --- The rest of your code is the same ---
 
 load_dotenv()
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -22,7 +34,7 @@ try:
     detection_model = fasterrcnn_resnet50_fpn(weights=None)
     detection_model.load_state_dict(torch.load("fasterrcnn_resnet50_fpn_coco-258fb6c6.pth"))
     detection_model.eval()
-    print("Successfully loaded local object detection model for bot.")
+    logger.info("Successfully loaded local object detection model for bot.")
     COCO_INSTANCE_CATEGORY_NAMES = [
         '__background__', 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
         'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'N/A', 'stop sign',
@@ -38,7 +50,7 @@ try:
         'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
     ]
 except Exception as e:
-    print(f"Could not load detection model for bot: {e}")
+    logger.error(f"Could not load detection model for bot: {e}")
     detection_model = None
 
 def get_content_labels(image: Image.Image, threshold=0.7):
@@ -57,7 +69,7 @@ def get_content_labels(image: Image.Image, threshold=0.7):
                      labels.append({'description': label_name, 'confidence': score})
         return labels[:5]
     except Exception as e:
-        print(f"Error in content analysis: {str(e)}")
+        logger.error(f"Error in content analysis: {e}")
         return []
 
 class FreeReverseImageSearch:
@@ -70,10 +82,10 @@ class FreeReverseImageSearch:
             img_bytes = buffered.getvalue()
             upload_url = "http://images.google.com/searchbyimage/upload"
             multipart = {'encoded_image': ('image.jpg', img_bytes), 'image_content': ''}
-            response = requests.post(upload_url, files=multipart, allow_redirects=False, timeout=10)
+            response = requests.post(upload_url, files=multipart, allow_redirects=False, timeout=15)
             search_url = response.headers.get("Location")
             if not search_url: return {'error': 'Could not get search URL from Google.'}
-            response = requests.get(search_url, headers=self.headers, timeout=10)
+            response = requests.get(search_url, headers=self.headers, timeout=15)
             soup = BeautifulSoup(response.text, 'html.parser')
             page_matches = []
             for a_tag in soup.find_all('a', href=True):
@@ -84,7 +96,7 @@ class FreeReverseImageSearch:
                         page_matches.append({'url': url, 'domain': domain})
             return {'page_matches': page_matches[:5]}
         except Exception as e:
-            print(f"Error in reverse image search: {str(e)}")
+            logger.error(f"Error in reverse image search: {e}")
             return {'page_matches': []}
 
 class DeepfakeDetector:
@@ -92,8 +104,6 @@ class DeepfakeDetector:
         torch.manual_seed(42)
         random.seed(42)
         np.random.seed(42)
-        torch.backends.cudnn.deterministic = True
-        torch.backends.cudnn.benchmark = False
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.model = timm.create_model("mvitv2_base_cls", pretrained=False, num_classes=2)
         try:
@@ -114,9 +124,7 @@ class DeepfakeDetector:
         return self.face_cascade.detectMultiScale(gray, 1.1, 4)
         
     def predict(self, image):
-        # *** THE FIX IS HERE ***
-        img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR) # Changed from COLOR_RGB_BGR
-
+        img_cv = cv2.cvtColor(np.array(image), cv2.COLOR_RGB2BGR)
         faces = self.detect_faces(img_cv)
         face_pil = image
         if len(faces) > 0:
@@ -134,7 +142,7 @@ try:
     deepfake_detector = DeepfakeDetector()
     reverse_search = FreeReverseImageSearch()
 except Exception as e:
-    print(f"❌ Error initializing services: {str(e)}")
+    logger.critical(f"FATAL: Error initializing services: {e}")
     exit()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -142,6 +150,8 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Send any image to analyze it.")
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = update.effective_user
+    logger.info(f"Received image from user {user.username} ({user.id})")
     processing_message = await update.message.reply_text("🔄 Analyzing image... Please wait.")
     try:
         photo = await update.message.photo[-1].get_file()
@@ -168,19 +178,21 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             response += "\n\n_No matching images found online._"
         await processing_message.edit_text(response, parse_mode='Markdown')
+        logger.info(f"Successfully sent analysis to user {user.id}")
     except Exception as e:
-        print(f"Error in handle_image: {e}")
+        logger.error(f"Error in handle_image: {e}", exc_info=True)
         await processing_message.edit_text(f"❌ An error occurred during analysis.")
 
 def main():
     if not TELEGRAM_TOKEN:
-        print("❌ Error: TELEGRAM_TOKEN not found in .env file.")
+        logger.critical("FATAL: TELEGRAM_TOKEN not found in .env file.")
         return
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("help", help_command))
     application.add_handler(MessageHandler(filters.PHOTO, handle_image))
-    print("🤖 Starting Free Deepfake Detection Bot...")
+    
+    logger.info("🤖 Starting bot...")
     application.run_polling()
 
 if __name__ == "__main__":
