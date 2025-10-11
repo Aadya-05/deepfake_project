@@ -1,0 +1,30 @@
+{
+  "manifest_version": 3,
+  "name": "Deepfake Image Analyzer",
+  "version": "1.0",
+  "description": "Analyze images for potential deepfake manipulation",
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": [
+    "activeTab",
+    "scripting",
+    "sidePanel"
+  ],
+  "side_panel": {
+    "default_path": "popup/sidebar.html"
+  },
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  }
+} 

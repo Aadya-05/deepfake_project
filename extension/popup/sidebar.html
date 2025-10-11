@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Deepfake Image Analyzer</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="../css/sidebar.css">
+</head>
+<body>
+    <div class="sidebar">
+        <h1>Deepfake Image Analyzer</h1>
+        
+        <div id="drop-area" class="drop-area">
+            <p>Drag and drop an image here</p>
+        </div>
+
+        <img id="preview-image" class="preview-image" style="display: none;">
+        
+        <button id="analyze-button" class="analyze-button" style="display: none;">Analyze</button>
+
+        <div id="analysis-result" class="analysis-result" style="display: none;">
+            <h2>Analysis Result:</h2>
+            <p id="result-text"></p>
+            <p id="confidence-score"></p>
+            <div id="explanation"></div>
+        </div>
+    </div>
+    <script src="../js/sidebar.js"></script>
+</body>
+</html> 
