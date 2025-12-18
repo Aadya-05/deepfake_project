@@ -1,93 +1,91 @@
-🧠 Deepfake Image & Video Analyzer
+# 🧠 Deepfake Image & Video Analyzer
 
-AI-Powered Media Forensics System using Vision Transformers
+**AI-Powered Media Forensics System using Vision Transformers**
 
-📌 Overview
+---
 
-The Deepfake Image & Video Analyzer is an end-to-end AI-driven media authenticity detection system designed to identify manipulated or synthetically generated content in images and videos.
+## 📌 Overview
 
-The project combines a Vision Transformer–based deepfake detection model (MViTv2) with a production-grade backend and multiple real-world interfaces (Chrome Extension and Telegram Bot), demonstrating both machine learning depth and system engineering capability.
+The **Deepfake Image & Video Analyzer** is an end-to-end AI-driven media authenticity detection system designed to identify manipulated or synthetically generated content in images and videos.
 
-This system is built for scalability, real-time inference, and cross-platform accessibility, making it suitable for cybersecurity, misinformation detection, and digital forensics use cases.
+The project combines a **Vision Transformer–based deepfake detection model (MViTv2)** with a production-grade backend and multiple real-world interfaces (Chrome Extension and Telegram Bot), demonstrating both **machine learning depth** and **system engineering capability**.
 
-🎯 Key AI/ML Objectives
+This system is built for **scalability, real-time inference, and cross-platform accessibility**, making it suitable for **cybersecurity, misinformation detection, and digital forensics** use cases.
 
-Detect facial manipulations and synthetic media
+---
 
-Perform frame-level video inference
+## 🎯 Key AI/ML Objectives
 
-Apply face-centric analysis to reduce noise
+- Detect facial manipulations and synthetic media
+- Perform frame-level video inference
+- Apply face-centric analysis to reduce noise
+- Serve ML inference via low-latency APIs
+- Integrate AI analysis into real user workflows
 
-Serve ML inference via low-latency APIs
+---
 
-Integrate AI analysis into real user workflows
+## 🚀 Features
 
-🚀 Features
-🔍 Multi-Modal Media Analysis
+### 🔍 Multi-Modal Media Analysis
 
-Image files (.jpg, .png)
+- Image files (`.jpg`, `.png`)
+- Uploaded video files (`.mp4`, `.avi`)
+- Video URLs (YouTube, Twitter/X, etc.)
 
-Uploaded video files (.mp4, .avi)
+---
 
-Video URLs (YouTube, Twitter/X, etc.)
+### 🧠 Deep Learning Core
 
-🧠 Deep Learning Core
+- **Model**: Multiscale Vision Transformer v2 (MViTv2)
+- **Framework**: PyTorch + TIMM
 
-Model: Multiscale Vision Transformer v2 (MViTv2)
+**Inference Strategy**
+- Face-level analysis
+- Frame sampling for videos
+- Confidence-based manipulation scoring
 
-Framework: PyTorch + TIMM
+---
 
-Inference Strategy:
+### 🎯 Face-Focused Detection
 
-Face-level analysis
+- Uses OpenCV Haar Cascades
+- Automatically detects and isolates faces
+- Ensures analysis focuses only on relevant facial regions
 
-Frame sampling for videos
+---
 
-Confidence-based manipulation scoring
+### ⚡ FastAPI ML Backend
 
-🎯 Face-Focused Detection
+- Central inference engine
+- Handles:
+  - Media preprocessing
+  - Model inference
+  - Confidence scoring
+  - API responses for multiple clients
 
-Uses OpenCV Haar Cascades
+---
 
-Automatically detects and isolates faces
+### 🌐 Chrome Extension
 
-Ensures the model focuses only on relevant facial regions
+- Side-panel based UI
+- Analyze images and videos directly while browsing
+- Designed for real-time misinformation checks
 
-⚡ FastAPI ML Backend
+---
 
-Central inference engine
+### 🤖 Telegram Bot
 
-Handles:
+- Mobile-friendly AI interface
+- Supports:
+  - Media upload and URL analysis
+  - Reverse image search (Google Lens via SerpAPI)
+  - Metadata and content insights (Google Vision API)
 
-Media preprocessing
+---
 
-Model inference
+## 🧩 System Architecture
 
-Confidence scoring
-
-API responses for multiple clients
-
-🌐 Chrome Extension
-
-Side-panel based UI
-
-Analyze images and videos directly while browsing
-
-Designed for real-time misinformation checks
-
-🤖 Telegram Bot
-
-Mobile-friendly AI interface
-
-Supports:
-
-Media upload & URL analysis
-
-Reverse image search (Google Lens via SerpAPI)
-
-Metadata & content insights (Google Vision API)
-
-🧩 System Architecture
+```text
 User (Web / Chrome / Telegram)
         |
         v
@@ -102,15 +100,19 @@ MViTv2 Deepfake Model (PyTorch)
         v
 Confidence Scoring & Explainable Output
 
-🛠️ Project Structure
+```
+---
+
+## 🛠️ Project Structure
+
+```text
 Deepfake-Analyzer/
-│
 ├── Backend/
-│   ├── main.py              # FastAPI inference server
-│   ├── deepfake_bot.py      # Telegram bot logic
+│   ├── main.py                # FastAPI inference server
+│   ├── deepfake_bot.py        # Telegram bot logic
 │   ├── telegram_bot.py
-│   ├── best_vit_model.pth   # Pretrained MViTv2 model
-│   └── utils/               # Preprocessing & helpers
+│   ├── best_vit_model.pth     # Pretrained MViTv2 model
+│   └── utils/                 # Preprocessing & helpers
 │
 ├── extension/
 │   ├── manifest.json
@@ -120,62 +122,10 @@ Deepfake-Analyzer/
 │
 ├── requirements.txt
 └── README.md
+```
+---
 
-⚙️ Setup & Installation
-1️⃣ Backend (ML Inference Server)
-cd Backend
-pip install -r requirements.txt
-
-
-Place the pretrained model:
-
-Backend/best_vit_model.pth
-
-
-Create .env:
-
-TELEGRAM_TOKEN=your_bot_token
-GOOGLE_VISION_API_KEY=your_key
-SERP_API_KEY=your_key
-
-
-Run the server:
-
-uvicorn main:app --reload
-
-2️⃣ Chrome Extension
-
-Open chrome://extensions/
-
-Enable Developer Mode
-
-Click Load Unpacked
-
-Select the /extension folder
-
-The analyzer opens via the extension icon or side panel.
-
-3️⃣ Telegram Bot
-python deepfake_bot.py
-
-
-Search for your bot on Telegram and start analyzing media instantly.
-
-📊 Detection Logic (AI Explanation)
-
-The model outputs a Manipulation Confidence Score
-
-Thresholding Strategy:
-
-> 20% → Flagged as Potentially Manipulated
-
-20%–50% → UI swap logic applied for clarity
-
-This avoids false certainty while maintaining interpretable results
-
-This design prioritizes responsible AI output over binary classification.
-
-🧪 ML Stack & Dependencies
+### ML Stack & Dependencies
 Core ML & Vision
 
 PyTorch
@@ -204,30 +154,31 @@ python-telegram-bot
 
 Chrome Extensions API
 
-📈 Use Cases
+### 📈 Use Cases
 
-Deepfake detection & misinformation analysis
+Deepfake detection and misinformation analysis
 
 Social media content verification
 
-Cybersecurity & digital forensics
+Cybersecurity and digital forensics
 
-Journalism & fact-checking tools
+Journalism and fact-checking tools
 
-AI safety & responsible ML research
+AI safety and responsible ML research
 
-🧠 Skills Demonstrated
+### 🧠 Skills Demonstrated
 
 Vision Transformers (ViTs)
 
 Deepfake detection pipelines
 
-ML model deployment (FastAPI)
+ML model deployment using FastAPI
 
-Face detection & video processing
+Face detection and video processing
 
 API-driven ML systems
 
 Cross-platform AI integration
 
 Responsible AI confidence handling
+
